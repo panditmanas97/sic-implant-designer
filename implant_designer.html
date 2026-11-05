@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SiC Implant Designer</title>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one wide plot with the drag handles, schedule + target tables in a side column that stacks under it on phones.
+   Palette: cool paper grey, Al = amber (p-type, plotted up), N = blue (n-type, plotted down), target = rose. */
+:root{
+  --bg:#edf0f4; --panel:#fafbfc; --ink:#162030; --muted:#5a687a; --line:#d3dae3; --soft:#e4e9ef;
+  --p:#c4630a; --n:#1d6bb8; --target:#b42a5b; --accent:#1d6bb8; --accent-ink:#ffffff; --grid:#dfe5ec;
+  --oxnet:#7a3fd1; --ptint:rgba(196,99,10,.16); --ntint:rgba(29,107,184,.15); --warn:#a35a00; --good:#18794e;
+  --font:"Hanken Grotesk",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0d1218; --panel:#141b24; --ink:#e5ebf3; --muted:#92a0b2; --line:#263242; --soft:#1b2430;
+  --p:#f0a24b; --n:#5eaaf0; --target:#ff7a9c; --accent:#5eaaf0; --accent-ink:#08121c; --grid:#1f2a37;
+  --oxnet:#b794f6; --ptint:rgba(240,162,75,.18); --ntint:rgba(94,170,240,.17); --warn:#f0b35a; --good:#5ed39a; color-scheme:dark;}}
+:root[data-theme="dark"]{
+  --bg:#0d1218; --panel:#141b24; --ink:#e5ebf3; --muted:#92a0b2; --line:#263242; --soft:#1b2430;
+  --p:#f0a24b; --n:#5eaaf0; --target:#ff7a9c; --accent:#5eaaf0; --accent-ink:#08121c; --grid:#1f2a37;
+  --oxnet:#b794f6; --ptint:rgba(240,162,75,.18); --ntint:rgba(94,170,240,.17); --warn:#f0b35a; --good:#5ed39a; color-scheme:dark;}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:14px/1.45 var(--font);
+  padding-inline:max(16px,env(safe-area-inset-left,0px)) max(16px,env(safe-area-inset-right,0px));padding-block:18px 28px}
+.wrap{max-width:1500px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
+h1{font-size:22px;line-height:1.2;margin:0;font-weight:700;letter-spacing:-.01em;text-wrap:balance}
+.sub{margin:0;color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(320px,400px);gap:14px;align-items:start}
+@media (max-width:980px){.grid{grid-template-columns:minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;min-width:0}
+.plotcard{padding:12px 12px 10px;display:flex;flex-direction:column;gap:10px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;font:500 13px var(--font);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+label.chk{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;cursor:pointer}
+label.chk input{accent-color:var(--accent)}
+.field{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.field input[type=range]{width:120px;accent-color:var(--accent)}
+.val{font-family:var(--mono);color:var(--ink);font-size:12.5px;min-width:3.4em}
+.canvaswrap{position:relative;height:clamp(320px,56vh,600px);border-radius:7px;background:var(--panel)}
+canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;outline:none;border-radius:7px}
+canvas:focus-visible{box-shadow:0 0 0 2px var(--accent)}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font:12px/1.35 var(--mono);padding:5px 8px;border-radius:5px;white-space:nowrap;z-index:2}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:0;border-top:2.5px solid;vertical-align:middle;margin-right:6px}
+.legend i.dash{border-top-style:dashed;border-top-width:2px}
+.legend i.dot{width:10px;height:10px;border-radius:50%;border:0;background:currentColor}
+.status{display:flex;flex-wrap:wrap;gap:6px 18px;font:12.5px var(--mono);color:var(--muted);border-top:1px solid var(--line);padding-top:9px}
+.status b{color:var(--ink);font-weight:500}
+.hint{font-size:12.5px;color:var(--muted);margin:0}
+.leftcol{display:flex;flex-direction:column;gap:14px;min-width:0}
+.under{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px;align-items:start}
+.side{display:flex;flex-direction:column;gap:14px;min-width:0}
+.panel{padding:12px}
+.panel h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 9px;font-weight:600;display:flex;justify-content:space-between;align-items:center;gap:8px}
+.btnrow{display:flex;flex-wrap:wrap;gap:6px}
+button.btn{border:1px solid var(--line);background:var(--soft);color:var(--ink);border-radius:7px;padding:5px 10px;font:500 13px var(--font);cursor:pointer}
+button.btn:hover{border-color:var(--accent)}
+button.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button.btn.n{border-color:var(--n);color:var(--n)} button.btn.p{border-color:var(--p);color:var(--p)}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.tablewrap{max-height:430px;overflow:auto;margin-top:10px;border:1px solid var(--line);border-radius:7px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{position:sticky;top:0;background:var(--soft);text-align:left;font-weight:600;color:var(--muted);padding:5px 6px;font-size:11.5px;white-space:nowrap}
+td{padding:3px 6px;border-top:1px solid var(--line);white-space:nowrap}
+tr.sel td{background:var(--soft)}
+tr.row{cursor:pointer}
+.pill{display:inline-block;min-width:26px;text-align:center;border-radius:4px;padding:1px 5px;font:500 12px var(--mono);color:#fff}
+.pill.Al{background:var(--p)} .pill.N{background:var(--n)}
+:root[data-theme="dark"] .pill{color:#0a1118}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .pill{color:#0a1118}}
+td input{width:100%;min-width:0;border:1px solid transparent;background:transparent;color:var(--ink);font:12.5px var(--mono);padding:3px 4px;border-radius:4px}
+td input:hover{border-color:var(--line)} td input:focus{background:var(--panel)}
+td.num{color:var(--muted);font-family:var(--mono)}
+button.x{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:15px;padding:2px 6px;border-radius:4px}
+button.x:hover{color:var(--target)}
+textarea{width:100%;min-height:110px;resize:vertical;border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:7px;font:12.5px/1.45 var(--mono);padding:8px}
+.layers td input{width:6.2em}
+.layers select{font:12.5px var(--mono);background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:4px;padding:2px}
+.note{color:var(--muted);font-size:12.5px;margin:8px 0 0}
+.panel h2 .toast{text-transform:none;letter-spacing:0;font-weight:500}
+.toast{font-size:12.5px;color:var(--good);min-height:1.2em}
+details>summary{cursor:pointer;list-style:none}
+details>summary::-webkit-details-marker{display:none}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+
+
+<div class="wrap">
+  <header>
+    <h1>SiC Implant Designer</h1>
+    <p class="sub">Aluminum (p, plotted up) and nitrogen (n, plotted down) implants in 4H-SiC. Drag a dot sideways to change its energy. Hold Shift while dragging to change its dose.</p>
+  </header>
+  <main class="grid">
+    <div class="leftcol">
+      <section class="card plotcard" aria-label="Doping profile">
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Plot scale">
+          <button type="button" id="vSigned" aria-pressed="true">Signed net</button>
+          <button type="button" id="vAbs" aria-pressed="false">|Net| log</button>
+        </div>
+        <label class="chk"><input type="checkbox" id="cInd" checked> Each implant</label>
+        <label class="chk"><input type="checkbox" id="cComp"> Al / N totals</label>
+        <label class="chk" title="For touch screens, or if you do not want to hold Shift"><input type="checkbox" id="cV"> Drag changes dose</label>
+        <span class="field"><label for="tsn">Screen oxide</label><input type="range" id="ts" min="0" max="150" step="1" value="60" aria-label="Screen oxide slider"><input type="number" id="tsn" min="0" max="1000" step="any" value="60" style="width:5.4em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"><span class="val">nm</span></span>
+        <span class="field"><label for="xmax">Depth range</label><input type="number" id="xmax" min="0.2" max="3" step="0.05" value="1.2" style="width:5em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"><span class="val">µm</span></span>
+
+      </div>
+      <div class="canvaswrap" id="cw"><canvas id="cv" tabindex="0" role="img" aria-label="Doping versus depth. Select a dot and use arrow keys to change energy and dose."></canvas><div class="tip" id="tip" hidden></div></div>
+      <div class="legend">
+        <span style="color:var(--ink)"><i style="border-color:var(--ink)"></i>Net doping</span>
+        <span style="color:var(--target)"><i class="dash" style="border-color:var(--target)"></i>Target</span>
+        <span style="color:var(--p)"><i class="dot"></i>Al implant (p)</span>
+        <span style="color:var(--n)"><i class="dot"></i>N implant (n)</span>
+        <span>Drag = energy · Shift+drag = dose · Arrow keys: ←→ energy, ↑↓ dose</span>
+      </div>
+      <div class="status" id="status"></div>
+    </section>
+      <div class="under">
+      <section class="card panel layers" aria-label="Target layers">
+        <h2>Target layers <span class="toast" id="toast3" role="status"></span></h2>
+        <table id="ltbl"><thead><tr><th>From µm</th><th>To µm</th><th>Type</th><th>Net cm⁻³</th><th></th></tr></thead><tbody></tbody></table>
+        <div class="btnrow" style="margin-top:8px"><button class="btn" id="addLayer" type="button">+ Add layer</button></div>
+        <p class="note">Below the last layer the target is the background doping (see Background doping below). Layer depths go to 3 µm.</p>
+      </section>
+      <section class="card panel layers" aria-label="Background doping">
+        <h2>Background doping <span class="toast" id="toast4" role="status"></span></h2>
+        <table id="btbl"><thead><tr><th>From µm</th><th>To µm</th><th>Type</th><th>Conc cm⁻³</th><th></th></tr></thead><tbody></tbody></table>
+        <div class="btnrow" style="margin-top:8px"><button class="btn" id="addBg" type="button">+ Add range</button></div>
+        <p class="note">Doping already in the wafer before any implant. Below the last target layer, the target is this background. Each range can be n (N) or p (Al).</p>
+      </section>
+      </div>
+    </div>
+    <aside class="side">
+      <section class="card panel" aria-label="Implant schedule">
+        <h2>Implant schedule <span class="toast" id="toast" role="status"></span></h2>
+        <div class="btnrow">
+          <button class="btn n" id="addN" type="button">+ Nitrogen</button>
+          <button class="btn p" id="addAl" type="button">+ Aluminum</button>
+          <button class="btn primary" id="optAll" type="button" title="Search energies and doses for the target layers shown below">Optimize schedule</button>
+          <button class="btn" id="opt" type="button" title="Re-fit all doses to the target, keeping energies where they are">Re-fit doses only</button>
+          <button class="btn" id="clear" type="button">Clear</button>
+        </div>
+        <div class="tablewrap"><table id="tbl"><thead><tr><th></th><th>keV</th><th>Dose cm⁻²</th><th>Rp µm</th><th>Peak cm⁻³</th><th></th></tr></thead><tbody></tbody></table></div>
+        <p class="note" style="margin:8px 0 0"><label for="nmax">Max implants for Optimize schedule</label> <input type="number" id="nmax" value="24" min="3" max="80" step="1" style="width:4.2em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"></p>
+        <p class="note">Rp is the projected range below the surface (screen oxide removed). Editing a number moves its dot.</p>
+      </section>
+      <section class="card panel" aria-label="CSV">
+        <h2>CSV <span class="toast" id="toast2" role="status"></span></h2>
+        <textarea id="csv" spellcheck="false" aria-label="Schedule as CSV"></textarea>
+        <div class="btnrow" style="margin-top:8px"><button class="btn" id="copy" type="button">Copy</button><button class="btn" id="apply" type="button">Apply pasted CSV</button></div>
+        <p class="note">Same format as your notebook files: species, energy (keV), dose (cm⁻²). Use t_screen = screen oxide in µm.</p>
+      </section>
+      <section class="card panel" aria-label="Sprocess">
+        <h2>Sprocess <span class="toast" id="toast5" role="status"></span></h2>
+        <div class="btnrow" style="margin-bottom:8px;align-items:center"><span class="field"><label for="sptilt">tilt</label><input type="number" id="sptilt" value="0" step="any" style="width:4.5em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"></span><span class="field"><label for="sprot">rotation</label><input type="number" id="sprot" value="0" step="any" style="width:4.5em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"></span><span class="field"><label for="sptemp">temp</label><input type="number" id="sptemp" value="25" step="any" style="width:4.5em;font:12.5px var(--mono);border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:5px;padding:3px 6px"></span></div>
+        <textarea id="spc" spellcheck="false" aria-label="Schedule as Sprocess implant commands"></textarea>
+        <div class="btnrow" style="margin-top:8px"><button class="btn" id="spcopy" type="button">Copy</button><button class="btn" id="spapply" type="button">Apply pasted commands</button></div>
+        <p class="note">Sentaurus Process commands: <code>implant Aluminum energy=… dose=…</code> (keV, cm⁻²). The screen oxide is not included; deposit it in your process flow. Pasted lines of this form (or CSV) are read back.</p>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<script>
+/* ---------- Janson range statistics + Pearson IV profile (port of implant.py) ---------- */
+const JP = {
+  Al: { a:[3.34e-7,0.42,113.6e-3,8.4e-3], b:[239e-7,484,0.88], c:[1.76,0.16,2.2,858], d:[1.5,126] },
+  N:  { a:[1.23e-7,1.17,-26.0e-3,0.6e-3], b:[147e-7,297,0.84], c:[-1.21,-0.04,2.8,109], d:[1.5,269] }
+};
+function jRp(sp,E){const p=JP[sp].a,L=Math.log(E);return p[0]*Math.pow(E,p[1])*Math.pow(E,p[2]*L)*Math.pow(E,-p[3]*L*L);}
+function jdRp(sp,E){const b=JP[sp].b;return b[0]/(1+Math.pow(b[1]/E,b[2]));}
+function jSkew(sp,E){const c=JP[sp].c;return (c[0]-c[1]*Math.sqrt(E))*Math.exp(-E/c[3])-c[2]*Math.exp(-c[3]/E);}
+function jKurt(sp,E){const d=JP[sp].d,S=Math.pow(jSkew(sp,E),2);
+  const B=(48+39*S+6*Math.pow(S+4,1.5))/(32-S);return (d[0]+2.5*Math.exp(-d[1]/E))*B;}
+/* unit-dose profile (cm^-3 per cm^-2) on depth grid xs (um), screen oxide ts (um) */
+function unitProfile(sp,E,xs,ts){
+  const m=jRp(sp,E), s=jdRp(sp,E), g=jSkew(sp,E), k=jKurt(sp,E);
+  const b=(9+6*g*g-5*k)/(6+3*g*g-2*k);
+  const t2=s*s*(4*(2*b-3)-g*g*Math.pow(b-2,2));
+  let f;
+  if(!(t2>0)||!isFinite(b)){ f=(x)=>Math.exp(-(x-m)*(x-m)/(2*s*s)); }
+  else{
+    const t=0.5*Math.sqrt(t2), d=s*g*(b-1)*(b-2)/(2*b*t), M=m-b*d*t/(b-1);
+    f=(x)=>{const u=x-M;return Math.exp(2*b*d*Math.atan(u/t)-b*Math.log(u*u+t*t));};
+  }
+  const N=400,lo=m-10*s,hi=m+10*s,h=(hi-lo)/N;let sum=0,pk=0;
+  for(let i=0;i<=N;i++){const v=f(lo+i*h);pk=Math.max(pk,v);sum+=v*((i===0||i===N)?1:(i%2?4:2));}
+  const norm=sum*h/3, unit=new Float64Array(xs.length);
+  for(let i=0;i<xs.length;i++) unit[i]=f((xs[i]+ts)*1e-4)/norm;
+  return {unit,peak:pk/norm,rp:m*1e4};   // rp in um (absolute, in oxide+SiC coordinates)
+}
+function invRp(sp,rpCm){let lo=10,hi=2000;
+  if(rpCm<=jRp(sp,lo))return lo; if(rpCm>=jRp(sp,hi))return hi;
+  for(let i=0;i<50;i++){const mid=(lo+hi)/2;(jRp(sp,mid)<rpCm)?lo=mid:hi=mid;}return (lo+hi)/2;}
+
+
+/* ---------- dose re-optimiser: weighted non-negative least squares, coordinate descent ---------- */
+function optimizeDoses(cols, isAl, doses, Tn, wgt, nreg, preg, sweeps){
+  // cols[j][i]: signed unit profile (Al +, N -) per cm^-2. doses in cm^-2. Work in 1e12 units.
+  const J=cols.length, n=Tn.length, SC=1e12, PA=1/2e18, PN=1/1.5e19;
+  const d=Float64Array.from(doses,v=>v/SC);
+  const r=new Float64Array(n);                 // main residual (unweighted): A d - Tn
+  for(let i=0;i<n;i++){let s=-Tn[i];for(let j=0;j<J;j++)s+=cols[j][i]*SC*d[j];r[i]=s;}
+  // penalty equations: Al in n-regions, N in p-regions (target 0)
+  const rowsA=[],rowsN=[];for(let i=0;i<n;i++){if(nreg[i])rowsA.push(i);if(preg[i])rowsN.push(i);}
+  const pA=new Float64Array(n),pN=new Float64Array(n);
+  for(let j=0;j<J;j++)for(const i of (isAl[j]?rowsA:rowsN)){(isAl[j]?pA:pN)[i]+=Math.abs(cols[j][i])*SC*d[j];}
+  let last=Infinity;
+  for(let it=0;it<sweeps;it++){
+    for(let j=0;j<J;j++){
+      const c=cols[j];let g=0,h=0;
+      for(let i=0;i<n;i++){const a=c[i]*SC,w2=wgt[i]*wgt[i];g+=w2*a*r[i];h+=w2*a*a;}
+      const pen=isAl[j]?rowsA:rowsN, pv=isAl[j]?pA:pN, pw=(isAl[j]?PA:PN), pw2=pw*pw;
+      for(const i of pen){const a=Math.abs(c[i])*SC;g+=pw2*a*pv[i];h+=pw2*a*a;}
+      if(h<=0)continue;
+      let nd=Math.max(0,d[j]-g/h),dd=nd-d[j];if(dd===0)continue;
+      for(let i=0;i<n;i++)r[i]+=c[i]*SC*dd;
+      for(const i of pen)pv[i]+=Math.abs(c[i])*SC*dd;
+      d[j]=nd;
+    }
+    if(it%25===24){let cost=0;for(let i=0;i<n;i++)cost+=(r[i]*wgt[i])**2;if(last-cost<1e-6*cost)break;last=cost;}
+  }
+  return Float64Array.from(d,v=>v*SC);
+}
+
+
+/* ---------- full schedule search: exact NNLS (Lawson-Hanson) on the Gram matrix over a dense energy grid ---------- */
+function buildGram(cols,isAl,Tn,wgt,nreg,preg){
+  const J=cols.length,n=Tn.length,SC=1e12,PA=1/2e18,PN=1/1.5e19;
+  const G=new Float64Array(J*J),b=new Float64Array(J);
+  const A=cols.map(c=>{const a=new Float64Array(n);for(let i=0;i<n;i++)a[i]=c[i]*SC;return a;});
+  for(let j=0;j<J;j++){
+    for(let i=0;i<n;i++)b[j]+=wgt[i]*wgt[i]*A[j][i]*Tn[i];
+    for(let k=j;k<J;k++){let s=0;const a=A[j],c=A[k];
+      for(let i=0;i<n;i++)s+=wgt[i]*wgt[i]*a[i]*c[i];
+      if(isAl[j]===isAl[k]){const reg=isAl[j]?nreg:preg,pw2=(isAl[j]?PA:PN)**2;let p=0;for(let i=0;i<n;i++)if(reg[i])p+=Math.abs(a[i])*Math.abs(c[i]);s+=pw2*p;}
+      G[j*J+k]=G[k*J+j]=s;}}
+  return {G,b,J};
+}
+function solveSPD(M,r,m){ // Gaussian elimination with tiny ridge, M is m*m row-major (copied)
+  const A=Float64Array.from(M),x=Float64Array.from(r);for(let i=0;i<m;i++)A[i*m+i]*=1+1e-10;
+  for(let i=0;i<m;i++){let p=i,mx=Math.abs(A[i*m+i]);for(let k=i+1;k<m;k++)if(Math.abs(A[k*m+i])>mx){mx=Math.abs(A[k*m+i]);p=k;}
+    if(mx<1e-300)return null;
+    if(p!==i){for(let c=0;c<m;c++){const t=A[i*m+c];A[i*m+c]=A[p*m+c];A[p*m+c]=t;}const t=x[i];x[i]=x[p];x[p]=t;}
+    for(let k=i+1;k<m;k++){const f=A[k*m+i]/A[i*m+i];if(f===0)continue;for(let c=i;c<m;c++)A[k*m+c]-=f*A[i*m+c];x[k]-=f*x[i];}}
+  for(let i=m-1;i>=0;i--){let s=x[i];for(let c=i+1;c<m;c++)s-=A[i*m+c]*x[c];x[i]=s/A[i*m+i];}
+  return x;
+}
+function nnlsGram(G,b,J,allowed){ // returns doses in 1e12 units (x>=0); `allowed` = array of usable column indices
+  const sc=new Float64Array(J);for(const j of allowed)sc[j]=1/Math.sqrt(G[j*J+j]||1);
+  const x=new Float64Array(J),inP=new Uint8Array(J);let P=[];
+  const grad=()=>{const w=new Float64Array(J);for(const j of allowed){let s=b[j]*sc[j];for(const k of P)s-=G[j*J+k]*sc[j]*sc[k]*x[k];w[j]=s;}return w;};
+  const solveP=()=>{const m=P.length,M=new Float64Array(m*m),r=new Float64Array(m);
+    for(let a=0;a<m;a++){r[a]=b[P[a]]*sc[P[a]];for(let c=0;c<m;c++)M[a*m+c]=G[P[a]*J+P[c]]*sc[P[a]]*sc[P[c]];}return solveSPD(M,r,m);};
+  for(let it=0;it<4*allowed.length+20;it++){
+    const w=grad();let jb=-1,wb=1e-9*1e-3;
+    for(const j of allowed)if(!inP[j]&&w[j]>wb){wb=w[j];jb=j;}
+    if(jb<0)break;inP[jb]=1;P.push(jb);
+    for(let inner=0;inner<4*allowed.length+20;inner++){
+      const z=solveP();if(!z)break;
+      let mn=Infinity;for(let a=0;a<P.length;a++)if(z[a]<=0&&x[P[a]]-z[a]>0)mn=Math.min(mn,0);
+      let neg=false;for(let a=0;a<P.length;a++)if(z[a]<=1e-14)neg=true;
+      if(!neg){for(let a=0;a<P.length;a++)x[P[a]]=z[a];break;}
+      let alpha=1;for(let a=0;a<P.length;a++)if(z[a]<=1e-14){const d=x[P[a]]-z[a];if(d>0)alpha=Math.min(alpha,x[P[a]]/d);}
+      for(let a=0;a<P.length;a++)x[P[a]]+=alpha*(z[a]-x[P[a]]);
+      const keep=[];for(const j of P){if(x[j]<=1e-12){x[j]=0;inP[j]=0;}else keep.push(j);}P=keep;
+      if(!P.length)break;}
+  }
+  const out=new Float64Array(J);for(const j of allowed)out[j]=x[j]*sc[j];return out;
+}
+function schedulePrune(gram,allowed0,Nmax){
+  const {G,b,J}=gram;let x=nnlsGram(G,b,J,allowed0);
+  let act=allowed0.filter(j=>x[j]>0);
+  while(act.length>Nmax){
+    // drop the implant whose removal costs least (approx: smallest x*sqrt(G_jj))
+    let jm=-1,vm=Infinity;for(const j of act){const v=x[j]*Math.sqrt(G[j*J+j]);if(v<vm){vm=v;jm=j;}}
+    act=act.filter(j=>j!==jm);x=nnlsGram(G,b,J,act);act=act.filter(j=>x[j]>0);}
+  return {x,act};
+}
+
+
+(function(){
+"use strict";
+const START=`N,89,2.094e+12
+N,91,6.177e+12
+N,213,5.492e+14
+N,216,2.677e+14
+N,342,1.033e+14
+N,437,4.65e+14
+N,514,5.362e+13
+N,523,3.791e+13
+N,606,1.564e+13
+N,616,3.035e+12
+N,713,4.362e+12
+N,725,4.692e+11
+N,868,1.508e+12
+Al,46,2.476e+12
+Al,84,3.233e+12
+Al,180,1.091e+14
+Al,365,2.166e+14
+Al,474,3.467e+14
+Al,482,6.725e+14`;
+let XMAX=1.2,XMIN=-0.1;const LMAX=3.0,XS=[]; for(let i=0;i<=1800;i++) XS.push(Math.round((-0.5+i*0.002)*1000)/1000);
+const I0=XS.findIndex(x=>x>=-1e-9);let NP=0,IL=0;
+function setNP(){NP=XS.findIndex(x=>x>XMAX+1e-9);if(NP<0)NP=XS.length;IL=Math.max(0,XS.findIndex(x=>x>=XMIN-1e-9));}setNP();
+// left edge of the plot: -0.1 um, or further left when the screen oxide is thicker than that
+function setLim(){XMIN=-Math.min(0.5,Math.max(0.1,Math.ceil((S.ts+0.005)*20)/20));setNP();}
+const LIN=3e15, EMIN=10, EMAX=2000, DMIN=1e9, DMAX=1e17;
+const $=id=>document.getElementById(id);
+let nextId=1;
+const S={imps:[],ts:0.060,bgl:[{to:LMAX,type:'n',c:5e17}],vmode:false,view:'signed',ind:true,comp:false,sel:null,
+  layers:[{to:0.12,type:'p',c:5e17},{to:0.3,type:'n',c:5e19},{to:0.5,type:'p',c:2e19}]};
+const cache=new Map();
+function unit(sp,E){ const k=sp+'|'+S.ts.toFixed(4)+'|'+E.toFixed(2); let u=cache.get(k);
+  if(!u){u=unitProfile(sp,E,XS,S.ts); if(cache.size>600)cache.clear(); cache.set(k,u);} return u; }
+const sgn=sp=>sp==='Al'?1:-1;
+function bgW(x){return x<0?0:bgAt(x);}
+function bgAt(x){for(const L of S.bgl){if(x<L.to)return (L.type==='p'?1:-1)*L.c;}const L=S.bgl[S.bgl.length-1];return L?(L.type==='p'?1:-1)*L.c:0;}
+function parseCSV(t){const out=[];for(const line of t.split(/\r?\n/)){const p=line.split(/[,\t;]/).map(s=>s.trim());
+  if(p.length<3)continue;const sp=/^al/i.test(p[0])?'Al':/^n/i.test(p[0])?'N':null;const E=parseFloat(p[1]),d=parseFloat(p[2]);
+  if(sp&&isFinite(E)&&isFinite(d)&&E>0&&d>0)out.push({sp,E:Math.min(EMAX,Math.max(EMIN,E)),dose:d});}return out;}
+function toSP(){const t=$('sptilt').value||'0',r=$('sprot').value||'0',tp=($('sptemp').value||'25').replace(/^(\d+)$/,'$1.');return S.imps.slice().sort((a,b)=>(a.sp!=='N')-(b.sp!=='N')||a.E-b.E).map(i=>`implant ${i.sp==='Al'?'Aluminum':'Nitrogen'}\tenergy= ${Math.round(i.E*10)/10} \tdose= ${fmt(i.dose,4)} \ttilt= ${t} \trotation= ${r} \ttemp= ${tp} `).join('\n')+'\n';}
+function parseSP(t){const out=[];for(const line of t.split(/\r?\n/)){const m=/^\s*implant\s+(\w+)/i.exec(line);if(!m)continue;const sp=/^al/i.test(m[1])?'Al':/^n/i.test(m[1])?'N':null;
+  const e=/energy\s*=\s*([-+0-9.eE]+)/i.exec(line),d=/dose\s*=\s*([-+0-9.eE]+)/i.exec(line);if(!sp||!e||!d)continue;const E=parseFloat(e[1]),D=parseFloat(d[1]);
+  if(isFinite(E)&&isFinite(D)&&E>0&&D>0)out.push({sp,E:Math.min(EMAX,Math.max(EMIN,E)),dose:D});}return out;}
+function setImps(list){S.imps=list.map(o=>({id:nextId++,sp:o.sp,E:o.E,dose:o.dose}));S.sel=null;}
+function fmt(v,d=3){return v.toExponential(d-1).replace('e+','e');}
+function toCSV(){return 'species, energy, dose\n'+S.imps.slice().sort((a,b)=>(a.sp!=='N')-(b.sp!=='N')||a.E-b.E).map(i=>`${i.sp}, ${Math.round(i.E*10)/10}, ${fmt(i.dose,4)}`).join('\n')+'\n';}
+
+/* ---------- targets ---------- */
+function targetAt(x){let from=0;for(const L of S.layers){if(x<L.to&&x>=from)return (L.type==='p'?1:-1)*L.c;from=L.to;}return bgAt(x);}
+/* ---------- profiles ---------- */
+let prof=null;
+function compute(){
+  const n=XS.length, net=new Float64Array(n), al=new Float64Array(n), nn=new Float64Array(n), per=new Map();
+  for(const im of S.imps){const u=unit(im.sp,im.E),y=new Float64Array(n);
+    for(let i=0;i<n;i++){y[i]=im.dose*u.unit[i];}
+    per.set(im.id,{y,u});
+    const tgt=im.sp==='Al'?al:nn;for(let i=0;i<n;i++)tgt[i]+=y[i];}
+  for(let i=0;i<n;i++)net[i]=XS[i]<0?0:al[i]-nn[i]+bgAt(XS[i]);
+  const netox=new Float64Array(n);for(let i=0;i<n;i++)netox[i]=XS[i]<0?al[i]-nn[i]:0;
+  prof={net,al,nn,per,netox};
+}
+function fitScore(){
+  let sum=0,cnt=0,from=0;
+  for(const L of S.layers){const a=from+0.012,b=L.to-0.012;from=L.to;
+    for(let i=0;i<XS.length;i++){const x=XS[i];if(x<a||x>b)continue;const t=(L.type==='p'?1:-1)*L.c,v=prof.net[i];
+      if(Math.sign(v)!==Math.sign(t)||v===0)sum+=2;else sum+=Math.min(2,Math.abs(Math.log10(Math.abs(v)/L.c)));cnt++;}}
+  return cnt?Math.pow(10,sum/cnt):NaN;
+}
+/* ---------- drawing ---------- */
+const cv=$('cv'),ctx=cv.getContext('2d'),cw=$('cw');
+let W=0,H=0,dpr=1,M={l:58,r:14,t:14,b:38},handles=[];
+function css(n){return getComputedStyle(document.documentElement).getPropertyValue(n).trim();}
+function resize(){const r=cw.getBoundingClientRect();W=r.width;H=r.height;dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);M.l=W<520?54:62;draw();}
+const symlog=v=>Math.sign(v)*Math.log10(1+Math.abs(v)/LIN);
+const isymlog=y=>Math.sign(y)*LIN*(Math.pow(10,Math.abs(y))-1);
+const YM=symlog(2.2e20), AL=14.7, AH=20.4;
+function X(x){return M.l+(x-XMIN)/(XMAX-XMIN)*(W-M.l-M.r);}
+function Y(v){const ph=H-M.t-M.b;
+  if(S.view==='signed')return M.t+(YM-symlog(v))/(2*YM)*ph;
+  const f=Math.log10(Math.max(Math.abs(v),1e10));return M.t+(AH-Math.max(f,AL))/(AH-AL)*ph;}
+function iX(px){return XMIN+(px-M.l)/(W-M.l-M.r)*(XMAX-XMIN);}
+function iYabs(py){const ph=H-M.t-M.b;
+  if(S.view==='signed')return Math.abs(isymlog(YM-(py-M.t)/ph*2*YM));
+  return Math.pow(10,AH-(py-M.t)/ph*(AH-AL));}
+function draw(){
+  if(!W||!prof)return;
+  const c=ctx;c.setTransform(dpr,0,0,dpr,0,0);c.clearRect(0,0,W,H);
+  const ink=css('--ink'),muted=css('--muted'),grid=css('--grid'),pC=css('--p'),nC=css('--n'),tC=css('--target'),line=css('--line');
+  const pw=W-M.l-M.r,ph=H-M.t-M.b;
+  c.font='11.5px '+css('--mono');c.textBaseline='middle';
+  // horizontal grid + labels
+  const ticks=[];
+  if(S.view==='signed'){for(let e=16;e<=20;e++){ticks.push(Math.pow(10,e),-Math.pow(10,e));}ticks.push(0);}
+  else{for(let e=15;e<=20;e++)ticks.push(Math.pow(10,e));}
+  c.textAlign='right';
+  for(const v of ticks){const y=Y(v===0?0:v);c.strokeStyle=v===0?line:grid;c.lineWidth=v===0?1.5:1;c.beginPath();c.moveTo(M.l,y);c.lineTo(W-M.r,y);c.stroke();
+    c.fillStyle=muted;c.fillText(v===0?'0':(v<0?'−':'')+'1e'+Math.round(Math.log10(Math.abs(v))),M.l-6,y);}
+  c.textAlign='center';c.textBaseline='top';
+  {const span=XMAX-XMIN,st=[0.05,0.1,0.2,0.25,0.5,1].find(s=>span/s<=(W<520?7:12))||1;
+   for(let k=Math.ceil(XMIN/st-1e-9);k*st<=XMAX+1e-9;k++){const x=Math.round(k*st*1000)/1000,px=X(x);c.strokeStyle=grid;c.lineWidth=1;c.beginPath();c.moveTo(px,M.t);c.lineTo(px,H-M.b);c.stroke();
+     c.fillStyle=muted;c.fillText(x.toFixed(st<0.1?2:1),px,H-M.b+6);}}
+  c.fillStyle=muted;c.fillText('Depth below surface (µm)',M.l+pw/2,H-16);
+  c.save();c.translate(9,M.t+ph/2);c.rotate(-Math.PI/2);c.textBaseline='middle';
+  c.fillText(S.view==='signed'?(W<520?'n ↓   p ↑':'Net doping (cm⁻³)   n ↓   p ↑'):'|Net doping| (cm⁻³)',0,0);c.restore();
+  c.save();c.beginPath();c.rect(M.l,M.t,pw,ph);c.clip();
+  if(S.ts>0){const xa=X(-S.ts),xb=X(0);c.fillStyle=css('--soft');c.globalAlpha=.9;c.fillRect(xa,M.t,xb-xa,ph);c.globalAlpha=1;
+    if(xb-xa>34){c.fillStyle=muted;c.textAlign='center';c.textBaseline='top';c.fillText('oxide',(xa+xb)/2<M.l+17?M.l+17:(xa+xb)/2,M.t+4);}}
+  c.strokeStyle=muted;c.lineWidth=1.2;c.beginPath();c.moveTo(X(0),M.t);c.lineTo(X(0),M.t+ph);c.stroke();
+  // tint under net curve (signed view)
+  const path=(arr,sign)=>{c.beginPath();let started=false;for(let i=IL;i<NP;i++){const v=arr[i],x=X(XS[i]),y=Y(v);if(!started){c.moveTo(x,y);started=true;}else c.lineTo(x,y);}};
+  if(S.view==='signed'){const y0=Y(0);
+    for(const side of [1,-1]){c.save();c.beginPath();c.rect(M.l,side>0?M.t:y0,pw,side>0?y0-M.t:H-M.b-y0);c.clip();
+      c.beginPath();c.moveTo(X(0),y0);for(let i=I0;i<NP;i++)c.lineTo(X(XS[i]),Y(prof.net[i]));c.lineTo(X(XS[NP-1]),y0);c.closePath();
+      c.fillStyle=side>0?css('--ptint'):css('--ntint');c.fill();c.restore();}}
+  // target
+  c.strokeStyle=tC;c.lineWidth=1.8;c.setLineDash([6,4]);c.beginPath();
+  let first=true;const lastTo=S.layers.length?S.layers[S.layers.length-1].to:0;
+  const segs=S.layers.map((L,k)=>({a:k?S.layers[k-1].to:0,b:L.to,v:(L.type==='p'?1:-1)*L.c}));
+  {let f=0;for(const B of S.bgl){const a0=Math.max(f,lastTo),b0=Math.min(B.to,XMAX+1);if(b0>a0)segs.push({a:a0,b:b0,v:(B.type==='p'?1:-1)*B.c});f=B.to;}}
+  for(const s of segs){if(s.b<=s.a)continue;const y=Y(s.v);if(first){c.moveTo(X(s.a),y);first=false;}else c.lineTo(X(s.a),y);c.lineTo(X(Math.min(s.b,XMAX)),y);}
+  c.stroke();c.setLineDash([]);
+  // individual implants
+  if(S.ind){for(const im of S.imps){const p=prof.per.get(im.id);if(!p)continue;const sel=im.id===S.sel;
+    c.strokeStyle=im.sp==='Al'?pC:nC;c.globalAlpha=sel?1:0.38;c.lineWidth=sel?2.2:1;c.beginPath();let st=false;
+    for(let i=IL;i<NP;i++){const v=S.view==='signed'?sgn(im.sp)*p.y[i]:p.y[i];const y=Y(v);if(!st){c.moveTo(X(XS[i]),y);st=true;}else c.lineTo(X(XS[i]),y);}
+    c.stroke();
+    if(S.ts>0){c.setLineDash([5,3]);c.strokeStyle=im.sp==='Al'?pC:nC;c.beginPath();st=false;for(let i=IL;i<=I0&&i<NP;i++){const v=S.view==='signed'?sgn(im.sp)*p.y[i]:p.y[i];const y=Y(v);if(!st){c.moveTo(X(XS[i]),y);st=true;}else c.lineTo(X(XS[i]),y);}c.stroke();c.setLineDash([]);}
+    c.globalAlpha=1;}}
+  else if(S.sel!=null){const im=S.imps.find(i=>i.id===S.sel),p=im&&prof.per.get(im.id);if(p){c.strokeStyle=im.sp==='Al'?pC:nC;c.lineWidth=2.2;c.beginPath();
+    for(let i=IL;i<NP;i++){const v=S.view==='signed'?sgn(im.sp)*p.y[i]:p.y[i];const y=Y(v);i>IL?c.lineTo(X(XS[i]),y):c.moveTo(X(XS[i]),y);}c.stroke();}}
+  // totals
+  if(S.comp){c.lineWidth=1.6;c.setLineDash([2,3]);
+    c.strokeStyle=pC;c.beginPath();for(let i=IL;i<NP;i++){const y=Y(prof.al[i]+Math.max(bgW(XS[i]),0));i>IL?c.lineTo(X(XS[i]),y):c.moveTo(X(XS[i]),y);}c.stroke();
+    c.strokeStyle=nC;c.beginPath();for(let i=IL;i<NP;i++){const nv=prof.nn[i]+Math.max(-bgW(XS[i]),0);const v=S.view==='signed'?-nv:nv;const y=Y(v);i>IL?c.lineTo(X(XS[i]),y):c.moveTo(X(XS[i]),y);}c.stroke();c.setLineDash([]);}
+  // net
+  c.strokeStyle=ink;c.lineWidth=2.4;c.lineJoin='round';
+  c.beginPath();for(let i=I0;i<NP;i++){const v=S.view==='signed'?prof.net[i]:Math.abs(prof.net[i]);const y=Y(v);i>I0?c.lineTo(X(XS[i]),y):c.moveTo(X(XS[i]),y);}c.stroke();
+  if(S.ts>0){const ox=css('--oxnet')||'#8a3ffc';c.strokeStyle=ox;c.lineWidth=2.4;c.setLineDash([7,4]);c.beginPath();let st=false;
+    for(let i=IL;i<=I0&&i<NP;i++){const nv=prof.netox[i],v=S.view==='signed'?nv:Math.abs(nv);const y=Y(v);if(!st){c.moveTo(X(XS[i]),y);st=true;}else c.lineTo(X(XS[i]),y);}
+    c.stroke();c.setLineDash([]);}
+  c.restore();
+  // handles
+  handles=[];
+  for(const im of S.imps){const p=prof.per.get(im.id);if(!p)continue;
+    const rp=Math.max(XMIN,p.u.rp-S.ts),pk=im.dose*p.u.peak;
+    const v=S.view==='signed'?sgn(im.sp)*pk:pk;const hx=X(Math.min(rp,XMAX)),hy=Math.min(H-M.b-2,Math.max(M.t+2,Y(v)));
+    handles.push({id:im.id,x:hx,y:hy});
+    const sel=im.id===S.sel;c.beginPath();c.arc(hx,hy,sel?7.5:5.5,0,7);c.fillStyle=im.sp==='Al'?pC:nC;c.fill();
+    c.lineWidth=sel?2.5:1.5;c.strokeStyle=css('--panel');c.stroke();
+    if(sel){c.beginPath();c.arc(hx,hy,10.5,0,7);c.strokeStyle=im.sp==='Al'?pC:nC;c.lineWidth=1.5;c.stroke();}}
+  updateStatus();
+}
+function updateStatus(){
+  const sc=fitScore();let dn=0,da=0;for(const i of S.imps){if(i.sp==='N')dn+=i.dose;else da+=i.dose;}
+  const el=$('status');
+  const good=sc<1.6;
+  el.innerHTML=`<span>Implants <b>${S.imps.length}</b></span><span>N dose <b>${S.imps.length?fmt(dn,3):'0'}</b> cm⁻²</span><span>Al dose <b>${fmt(da||0,3)}</b> cm⁻²</span>`+
+   `<span>Typical miss vs target <b style="color:${isFinite(sc)?(good?'var(--good)':sc<3?'var(--warn)':'var(--target)'):'inherit'}">${isFinite(sc)?'×'+sc.toFixed(2):'–'}</b> <span title="Geometric mean of how far the net doping is from each layer's target, away from the layer edges. ×1.00 is perfect.">(?)</span></span>`;
+}
+let raf=0;function redraw(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;compute();draw();});}
+/* ---------- table ---------- */
+const tb=document.querySelector('#tbl tbody');
+function rowFor(im){const tr=document.createElement('tr');tr.className='row'+(im.id===S.sel?' sel':'');tr.dataset.id=im.id;
+  const p=prof&&prof.per.get(im.id);
+  tr.innerHTML=`<td><span class="pill ${im.sp}">${im.sp}</span></td><td><input aria-label="Energy keV" data-f="E" size="5" inputmode="decimal"></td><td><input aria-label="Dose" data-f="dose" size="8" inputmode="decimal"></td><td class="num" data-f="rp"></td><td class="num" data-f="pk"></td><td><button class="x" type="button" aria-label="Remove implant" title="Remove">×</button></td>`;
+  return tr;}
+function fillRow(tr,im){const q=f=>tr.querySelector(`[data-f="${f}"]`);const p=prof&&prof.per.get(im.id);
+  const e=q('E'),d=q('dose');if(document.activeElement!==e)e.value=(Math.round(im.E*10)/10).toString();if(document.activeElement!==d)d.value=fmt(im.dose,3);
+  if(p){q('rp').textContent=(p.u.rp-S.ts).toFixed(3);q('pk').textContent=fmt(im.dose*p.u.peak,2);}}
+function buildTable(){tb.innerHTML='';for(const im of S.imps){const tr=rowFor(im);tb.appendChild(tr);fillRow(tr,im);}}
+function refreshRows(){for(const tr of tb.children){const im=S.imps.find(i=>i.id==tr.dataset.id);if(im){fillRow(tr,im);tr.classList.toggle('sel',im.id===S.sel);}}
+  $('csv').value=toCSV();$('spc').value=toSP();}
+tb.addEventListener('click',e=>{const tr=e.target.closest('tr');if(!tr)return;const id=+tr.dataset.id;
+  if(e.target.classList.contains('x')){S.imps=S.imps.filter(i=>i.id!==id);if(S.sel===id)S.sel=null;buildTable();redraw();save();setTimeout(refreshRows,30);return;}
+  S.sel=id;for(const r of tb.children)r.classList.toggle('sel',+r.dataset.id===id);redraw();});
+tb.addEventListener('change',e=>{const tr=e.target.closest('tr');if(!tr||!e.target.dataset.f)return;const im=S.imps.find(i=>i.id==tr.dataset.id);if(!im)return;
+  const v=parseFloat(e.target.value);if(!isFinite(v)||v<=0){fillRow(tr,im);return;}
+  if(e.target.dataset.f==='E')im.E=Math.min(EMAX,Math.max(EMIN,v));else im.dose=Math.min(DMAX,Math.max(DMIN,v));
+  redraw();setTimeout(()=>{refreshRows();save();},30);});
+/* ---------- pointer interaction ---------- */
+let drag=null;const tip=$('tip');
+function hit(px,py){let best=null,bd=1e9;const R=(matchMedia('(pointer:coarse)').matches?20:13);
+  for(const h of handles){const d=Math.hypot(h.x-px,h.y-py);if(d<R&&d<bd){bd=d;best=h;}}return best;}
+function pos(e){const r=cv.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top];}
+function showTip(im,h){const p=prof.per.get(im.id);tip.hidden=false;
+  tip.textContent=`${im.sp}  ${Math.round(im.E)} keV · ${fmt(im.dose,3)} cm⁻² · Rp ${(p.u.rp-S.ts).toFixed(3)} µm`;
+  const tw=tip.offsetWidth;let l=h.x+12,t=h.y-34;if(l+tw>W-4)l=h.x-tw-12;if(t<2)t=h.y+14;tip.style.left=Math.max(2,l)+'px';tip.style.top=t+'px';}
+cv.addEventListener('pointerdown',e=>{const [px,py]=pos(e);const h=hit(px,py);if(!h){S.sel=null;refreshRows();redraw();return;}
+  cv.focus({preventScroll:true});S.sel=h.id;drag={id:h.id,dx:px-h.x,dy:py-h.y};cv.setPointerCapture(e.pointerId);
+  for(const r of tb.children)r.classList.toggle('sel',+r.dataset.id===h.id);
+  const tr=tb.querySelector(`tr[data-id="${h.id}"]`);if(tr)tr.scrollIntoView({block:'nearest'});redraw();e.preventDefault();});
+cv.addEventListener('pointermove',e=>{const [px,py]=pos(e);
+  if(drag){const im=S.imps.find(i=>i.id===drag.id);if(!im)return;
+    const vert=e.shiftKey||S.vmode;
+    if(!vert){   // horizontal only: energy
+      const depth=Math.max(-S.ts,iX(px-drag.dx));im.E=invRp(im.sp,(depth+S.ts)*1e-4);
+      compute();draw();const h2=handles.find(h=>h.id===im.id);if(h2)drag.dy=py-h2.y;   // keep vertical anchor in sync
+    }else{       // Shift (or Dose-drag mode): vertical only: dose
+      const val=iYabs(py-drag.dy);const u=unit(im.sp,im.E);im.dose=Math.min(DMAX,Math.max(DMIN,val/u.peak));
+      compute();draw();const h2=handles.find(h=>h.id===im.id);if(h2)drag.dx=px-h2.x;
+    }
+    refreshRows();const h=handles.find(h=>h.id===im.id);if(h)showTip(im,h);cv.style.cursor=vert?'ns-resize':'ew-resize';return;}
+  const h=hit(px,py);cv.style.cursor=h?((e.shiftKey||S.vmode)?'ns-resize':'ew-resize'):'default';
+  if(h){const im=S.imps.find(i=>i.id===h.id);showTip(im,h);}else tip.hidden=true;});
+function endDrag(){if(drag){drag=null;cv.style.cursor='default';save();}}
+cv.addEventListener('pointerup',endDrag);cv.addEventListener('pointercancel',endDrag);
+cv.addEventListener('pointerleave',()=>{if(!drag)tip.hidden=true;});
+cv.addEventListener('keydown',e=>{const im=S.imps.find(i=>i.id===S.sel);if(!im)return;const big=e.shiftKey;let used=true;
+  if(e.key==='ArrowLeft')im.E=Math.max(EMIN,im.E-(big?10:1));
+  else if(e.key==='ArrowRight')im.E=Math.min(EMAX,im.E+(big?10:1));
+  else if(e.key==='ArrowUp')im.dose=Math.min(DMAX,im.dose*(big?1.5:1.05));
+  else if(e.key==='ArrowDown')im.dose=Math.max(DMIN,im.dose/(big?1.5:1.05));
+  else if(e.key==='Delete'||e.key==='Backspace'){S.imps=S.imps.filter(i=>i!==im);S.sel=null;buildTable();}
+  else used=false;
+  if(used){e.preventDefault();compute();draw();refreshRows();save();}});
+/* ---------- controls ---------- */
+function setView(v){S.view=v;$('vSigned').setAttribute('aria-pressed',v==='signed');$('vAbs').setAttribute('aria-pressed',v==='abs');redraw();save();}
+$('vSigned').onclick=()=>setView('signed');$('vAbs').onclick=()=>setView('abs');
+$('cInd').onchange=e=>{S.ind=e.target.checked;redraw();save();};
+$('cComp').onchange=e=>{S.comp=e.target.checked;redraw();save();};
+function setTs(nm,from){nm=Math.min(1000,Math.max(0,nm));if(!isFinite(nm))return;S.ts=nm/1000;setLim();
+  if(from!=='range')$('ts').value=Math.min(nm,+$('ts').max);if(from!=='num')$('tsn').value=Math.round(nm*100)/100;redraw();setTimeout(refreshRows,30);}
+$('ts').oninput=e=>setTs(+e.target.value,'range');$('ts').onchange=save;
+$('tsn').oninput=e=>{if(e.target.value!=='')setTs(+e.target.value,'num');};$('tsn').onchange=e=>{if(e.target.value===''||!isFinite(+e.target.value))e.target.value=Math.round(S.ts*1000);save();};
+function setRange(v){if(!isFinite(v))return;XMAX=Math.min(LMAX,Math.max(0.2,v));setNP();redraw();}
+$('xmax').oninput=e=>{if(e.target.value!==''&&+e.target.value>=0.2)setRange(+e.target.value);};
+$('xmax').onchange=e=>{const v=+e.target.value;if(e.target.value===''||!isFinite(v))e.target.value=XMAX;else{setRange(v);e.target.value=XMAX;}save();};
+function ensureRange(to){if(XMAX<to){XMAX=Math.min(LMAX,Math.ceil(to*20)/20);setNP();$('xmax').value=XMAX;}}
+$('cV').onchange=e=>{S.vmode=e.target.checked;save();};
+function add(sp){const im={id:nextId++,sp,E:sp==='N'?100:150,dose:1e13};S.imps.push(im);S.sel=im.id;buildTable();redraw();setTimeout(()=>{refreshRows();const tr=tb.querySelector(`tr[data-id="${im.id}"]`);if(tr)tr.scrollIntoView({block:'nearest'});},30);save();}
+$('addN').onclick=()=>add('N');$('addAl').onclick=()=>add('Al');
+$('clear').onclick=()=>{S.imps=[];S.sel=null;buildTable();redraw();setTimeout(refreshRows,30);save();};
+function flash(id,msg){const t=$(id);t.textContent=msg;setTimeout(()=>{if(t.textContent===msg)t.textContent='';},2600);}
+$('copy').onclick=async()=>{const ta=$('csv');try{await navigator.clipboard.writeText(ta.value);flash('toast2','Copied');}catch(_){ta.focus();ta.select();flash('toast2','Press Ctrl/Cmd+C');}};
+$('sptilt').oninput=$('sprot').oninput=$('sptemp').oninput=()=>{$('spc').value=toSP();};
+$('spcopy').onclick=async()=>{const ta=$('spc');try{await navigator.clipboard.writeText(ta.value);flash('toast5','Copied');}catch(_){ta.focus();ta.select();flash('toast5','Press Ctrl/Cmd+C');}};
+$('spapply').onclick=()=>{let l=parseSP($('spc').value);if(!l.length)l=parseCSV($('spc').value);if(!l.length){flash('toast5','No implant lines found');return;}setImps(l);buildTable();redraw();setTimeout(refreshRows,30);save();flash('toast5','Applied '+l.length+' implants');};
+$('apply').onclick=()=>{const l=parseCSV($('csv').value);if(!l.length){flash('toast2','No valid rows found');return;}setImps(l);buildTable();redraw();setTimeout(refreshRows,30);save();flash('toast2',l.length+' implants loaded');};
+function buildProblem(){
+  const n=XS.length,lastTo=S.layers.length?S.layers[S.layers.length-1].to:0;
+  const Tn=new Float64Array(n),w=new Float64Array(n),nreg=new Array(n),preg=new Array(n);
+  for(let i=0;i<n;i++){const x=XS[i];if(x<0){Tn[i]=0;w[i]=0;nreg[i]=false;preg[i]=false;continue;}const T=targetAt(x);Tn[i]=T-bgAt(x);
+    let s=Math.max(0.02*Math.abs(T),1e16);
+    if(x>=lastTo+0.06)s=4e15;
+    // thin layers get a tight band so they are not swamped
+    let f=0;for(const L of S.layers){if(x>=f&&x<L.to&&L.c<3e17&&L.to-f<0.15)s=Math.min(s,8e15);f=L.to;}
+    let f2=0;for(const L of S.layers.concat([{to:LMAX}])){if(Math.abs(x-f2)<0.003&&f2>0)s*=3;f2=L.to;}
+    w[i]=1/s;
+    let inN=false,inP=false,fr=0;for(const L of S.layers){if(x>fr+0.012&&x<L.to-0.012){if(L.type==='n')inN=true;else inP=true;}fr=L.to;}
+    nreg[i]=inN;preg[i]=inP;}
+  return {Tn,w,nreg,preg,lastTo};
+}
+$('opt').onclick=()=>{
+  if(!S.imps.length){flash('toast','Add implants first');return;}
+  const {Tn,w,nreg,preg}=buildProblem();
+  const cols=S.imps.map(im=>{const u=unit(im.sp,im.E).unit,s=sgn(im.sp);return Float64Array.from(u,v=>s*v);});
+  const d=optimizeDoses(cols,S.imps.map(i=>i.sp==='Al'),S.imps.map(i=>i.dose),Tn,w,nreg,preg,3000);
+  S.imps.forEach((im,k)=>{im.dose=Math.min(DMAX,Math.max(DMIN,d[k]));});
+  redraw();setTimeout(()=>{refreshRows();save();},30);flash('toast','Doses re-optimized');};
+/* full search: pick energies AND doses for the current target */
+$('optAll').onclick=()=>{
+  if(!S.layers.length){flash('toast','Add a target layer first');return;}
+  const Nmax=Math.min(80,Math.max(3,Math.round(+$('nmax').value)||24));
+  const {Tn,w,nreg,preg,lastTo}=buildProblem();
+  const cand=[];
+  for(const sp of ['Al','N']){
+    const lo=Math.max(EMIN,invRp(sp,Math.max(S.ts,0.002)*1e-4)),hi=Math.min(EMAX,invRp(sp,(lastTo+0.3+S.ts)*1e-4));
+    if(!(hi>lo*1.02))continue;
+    const seen=new Set();for(let k=0;k<170;k++){const e=Math.round(lo*Math.pow(hi/lo,k/169));if(!seen.has(e)){seen.add(e);cand.push([sp,e]);}}}
+  const cols=cand.map(([sp,e])=>{const u=unitProfile(sp,e,XS,S.ts).unit,s=sgn(sp);return Float64Array.from(u,v=>s*v);});
+  const isAl=cand.map(c=>c[0]==='Al');
+  const gram=buildGram(cols,isAl,Tn,w,nreg,preg);
+  const r=schedulePrune(gram,[...cols.keys()],Nmax);
+  const list=r.act.map(j=>({sp:cand[j][0],E:cand[j][1],dose:Math.min(DMAX,Math.max(DMIN,+(r.x[j]*1e12).toPrecision(4)))}))
+    .filter(o=>o.dose>DMIN*10).sort((p,q)=>(p.sp!=='N')-(q.sp!=='N')||p.E-q.E);
+  if(!list.length){flash('toast','No schedule found');return;}
+  setImps(list);buildTable();redraw();setTimeout(()=>{refreshRows();save();},30);
+  flash('toast',`${list.length} implants (${list.filter(o=>o.sp==='N').length} N, ${list.filter(o=>o.sp==='Al').length} Al)`);};
+/* target layers table */
+const lb=document.querySelector('#ltbl tbody');
+function buildLayers(){lb.innerHTML='';let from=0;S.layers.forEach((L,k)=>{const tr=document.createElement('tr');
+  tr.innerHTML=`<td class="num">${from.toFixed(2)}</td><td><input data-k="${k}" data-f="to" aria-label="Layer ${k+1} bottom depth, µm" value="${L.to}"></td><td><select data-k="${k}" data-f="type" aria-label="Layer ${k+1} type"><option value="n"${L.type==='n'?' selected':''}>n</option><option value="p"${L.type==='p'?' selected':''}>p</option></select></td><td><input data-k="${k}" data-f="c" aria-label="Layer ${k+1} net doping" value="${L.c.toExponential(1).replace('e+','e')}"></td><td><button class="x" type="button" data-k="${k}" data-rm="1" aria-label="Remove layer ${k+1}" title="Remove layer">×</button></td>`;
+  lb.appendChild(tr);from=L.to;});
+  if(!S.layers.length){const tr=document.createElement('tr');tr.innerHTML='<td colspan="5" class="num">No layers. The target is the background everywhere.</td>';lb.appendChild(tr);}}
+lb.addEventListener('click',e=>{if(!e.target.dataset.rm)return;S.layers.splice(+e.target.dataset.k,1);buildLayers();redraw();save();});
+$('addLayer').onclick=()=>{const last=S.layers[S.layers.length-1],from=last?last.to:0;
+  if(from>LMAX-0.02){flash('toast3','Layers can go to 3 µm');return;}
+  S.layers.push({to:Math.min(LMAX,Math.round((from+0.1)*1000)/1000),type:last&&last.type==='n'?'p':'n',c:last?last.c:1e18});
+  ensureRange(S.layers[S.layers.length-1].to);
+  buildLayers();redraw();save();};
+lb.addEventListener('change',e=>{const k=+e.target.dataset.k,f=e.target.dataset.f;if(f==null)return;const L=S.layers[k];
+  if(f==='type')L.type=e.target.value;else{const v=parseFloat(e.target.value);if(!isFinite(v)||v<=0){buildLayers();return;}
+    if(f==='to'){const lo=k?S.layers[k-1].to+0.01:0.01,hi=k<S.layers.length-1?S.layers[k+1].to-0.01:LMAX;L.to=Math.round(Math.min(hi,Math.max(lo,v))*1000)/1000;
+      ensureRange(L.to);}else L.c=v;}
+  buildLayers();redraw();save();});
+/* background doping ranges */
+const bb=document.querySelector('#btbl tbody');
+function buildBg(){bb.innerHTML='';let from=0;const n=S.bgl.length;S.bgl.forEach((L,k)=>{const last=k===n-1,tr=document.createElement('tr');
+  tr.innerHTML=`<td class="num">${from.toFixed(2)}</td><td>${last?'<span class="num">bottom</span>':`<input data-k="${k}" data-f="to" aria-label="Background range ${k+1} bottom depth, µm" value="${L.to}">`}</td><td><select data-k="${k}" data-f="type" aria-label="Background range ${k+1} type"><option value="n"${L.type==='n'?' selected':''}>n (N)</option><option value="p"${L.type==='p'?' selected':''}>p (Al)</option></select></td><td><input data-k="${k}" data-f="c" aria-label="Background range ${k+1} concentration" value="${L.c.toExponential(1).replace('e+','e')}"></td><td>${n>1?`<button class="x" type="button" data-k="${k}" data-rm="1" aria-label="Remove background range ${k+1}" title="Remove range">×</button>`:''}</td>`;
+  bb.appendChild(tr);from=L.to;});}
+bb.addEventListener('click',e=>{if(!e.target.dataset.rm)return;const k=+e.target.dataset.k;S.bgl.splice(k,1);S.bgl[S.bgl.length-1].to=LMAX;buildBg();redraw();save();});
+$('addBg').onclick=()=>{const n=S.bgl.length,last=S.bgl[n-1],from=n>1?S.bgl[n-2].to:0;
+  const b=Math.round(Math.min(from+0.3,Math.max(from+0.05,XMAX-0.05))*1000)/1000;
+  if(b>=LMAX-0.02){flash('toast4','No room below');return;}
+  last.to=b;S.bgl.push({to:LMAX,type:last.type,c:last.c});buildBg();redraw();save();};
+bb.addEventListener('change',e=>{const k=+e.target.dataset.k,f=e.target.dataset.f;if(f==null)return;const L=S.bgl[k];
+  if(f==='type')L.type=e.target.value;else{const v=parseFloat(e.target.value);if(!isFinite(v)||v<0||(f==='to'&&v<=0)){buildBg();return;}
+    if(f==='to'){const lo=k?S.bgl[k-1].to+0.01:0.01,hi=S.bgl[k+1].to-0.01;L.to=Math.round(Math.min(hi,Math.max(lo,v))*1000)/1000;ensureRange(L.to);}else L.c=v;}
+  buildBg();redraw();save();});
+/* ---------- persistence (per-viewer convenience only) ---------- */
+function save(){try{localStorage.setItem('sic-implant-designer',JSON.stringify({imps:S.imps.map(i=>({sp:i.sp,E:i.E,dose:i.dose})),ts:S.ts,xmax:XMAX,bgl:S.bgl,layers:S.layers,view:S.view,ind:S.ind,comp:S.comp}));}catch(_){}}
+function restore(){try{const j=JSON.parse(localStorage.getItem('sic-implant-designer')||'null');if(!j||!Array.isArray(j.imps))return false;
+  setImps(j.imps.filter(o=>(o.sp==='Al'||o.sp==='N')&&o.E>0&&o.dose>0));
+  if(j.ts>=0&&j.ts<=1)S.ts=j.ts;if(j.xmax>=0.2&&j.xmax<=LMAX){XMAX=j.xmax;setNP();}
+  if(Array.isArray(j.bgl)&&j.bgl.length&&j.bgl.every(o=>o&&o.c>=0&&(o.type==='n'||o.type==='p')&&o.to>0)){S.bgl=j.bgl;S.bgl[S.bgl.length-1].to=LMAX;}else if(j.bg>=0){S.bgl=[{to:LMAX,type:j.bgType==='p'?'p':'n',c:j.bg}];}
+  if(Array.isArray(j.layers)&&j.layers.length)S.layers=j.layers;
+  S.view=j.view==='abs'?'abs':'signed';S.ind=j.ind!==false;S.comp=!!j.comp;return true;}catch(_){return false;}}
+/* ---------- boot ---------- */
+if(!restore())setImps(parseCSV(START));
+$('ts').value=Math.min(150,Math.round(S.ts*1000));$('tsn').value=Math.round(S.ts*1000);$('xmax').value=XMAX;$('cV').checked=S.vmode;
+$('cInd').checked=S.ind;$('cComp').checked=S.comp;setView(S.view);
+setLim();buildLayers();buildBg();compute();buildTable();refreshRows();
+new ResizeObserver(resize).observe(cw);resize();
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',draw);
+new MutationObserver(draw).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(draw);
+})();
+
+</script>
+
+</body>
+</html>
